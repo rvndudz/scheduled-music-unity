@@ -1,0 +1,56 @@
+[
+  {
+    "event_id": "demo_event_001",
+    "event_name": "LiveRoom Test 1",
+    "artist_name": "Codex DJ1",
+    "start_time_utc": "2025-11-18T08:53:12+00:00",
+    "end_time_utc": "2025-11-18T09:31:55+00:00",
+    "tracks": [
+      {
+        "track_id": "epic_001",
+        "track_name": "epic1",
+        "track_url": "https://pub-5fdeab8f68f54d4a976fe22c1201fbb0.r2.dev/epic.mp3",
+        "track_duration_seconds": 158
+      },
+      {
+        "track_id": "horror_001",
+        "track_name": "horror1",
+        "track_url": "https://pub-5fdeab8f68f54d4a976fe22c1201fbb0.r2.dev/horror.mp3",
+        "track_duration_seconds": 148
+      },
+      {
+        "track_id": "christmas_001",
+        "track_name": "christmas1",
+        "track_url": "https://pub-5fdeab8f68f54d4a976fe22c1201fbb0.r2.dev/christmas.mp3",
+        "track_duration_seconds": 112
+      }
+    ]
+  },
+  {
+    "event_id": "demo_event_002",
+    "event_name": "LiveRoom Test 2",
+    "artist_name": "Codex DJ2",
+    "start_time_utc": "2025-11-18T08:31:56+00:00",
+    "end_time_utc": "2025-11-18T08:34:56+00:00",
+    "tracks": [
+      {
+        "track_id": "horror_002",
+        "track_name": "horror2",
+        "track_url": "https://pub-5fdeab8f68f54d4a976fe22c1201fbb0.r2.dev/horror.mp3",
+        "track_duration_seconds": 148
+      },
+      {
+        "track_id": "christmas_002",
+        "track_name": "christmas2",
+        "track_url": "https://pub-5fdeab8f68f54d4a976fe22c1201fbb0.r2.dev/christmas.mp3",
+        "track_duration_seconds": 112
+      },
+      {
+        "track_id": "epic_002",
+        "track_name": "epic2",
+        "track_url": "https://pub-5fdeab8f68f54d4a976fe22c1201fbb0.r2.dev/epic.mp3",
+        "track_duration_seconds": 158
+      }
+    ]
+  }
+]
