@@ -5,13 +5,13 @@ Unity project for creating scheduled playlists that power in-game radios, kiosks
 ## Features
 - Configure playlists with time slots (daily or weekly) for live-feeling programming
 - Trigger playback for radios, kiosks, or other in-world speakers
-- No external streaming service required; audio assets stay inside the project
+- No external streaming service required; audio downloads happen at runtime from your storage backend
 - Optional web dashboard (see [`scheduled-music-nextjs`](https://github.com/rvndudz/scheduled-music-nextjs)) to manage playlists via Cloudflare R2 storage
 
 ## Getting Started
 1. Open the project in Unity (2021.3 LTS or later recommended).
-2. Import your audio clips into `Assets/Audio`.
-3. Use the scheduling inspector (under `Assets/Scripts`) to define playlists and slots.
+2. Use the scheduling inspector (under `Assets/Scripts`) to define playlists and slots that reference remote audio.
+3. Configure runtime download settings (e.g., CDN or Cloudflare R2) so clips stream into the scene automatically.
 4. Drop a playback controller into your scene to start the scheduled station.
 
 ## Use Cases
