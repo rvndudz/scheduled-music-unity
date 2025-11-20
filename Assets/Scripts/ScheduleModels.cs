@@ -8,6 +8,7 @@ public class ScheduledEventPayload
     public string artist_name;
     public string start_time_utc;
     public string end_time_utc;
+    public string cover_image_url;
     public ScheduledTrack[] tracks;
 }
 

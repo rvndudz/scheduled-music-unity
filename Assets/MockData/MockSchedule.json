@@ -1,56 +1,30 @@
 [
   {
-    "event_id": "demo_event_001",
-    "event_name": "LiveRoom Test 1",
-    "artist_name": "Codex DJ1",
+    "event_id": "2aa9a021-3157-4eb8-b6ce-fc976c82601a",
+    "event_name": "test",
+    "artist_name": "test",
     "start_time_utc": "2025-11-18T08:53:12+00:00",
-    "end_time_utc": "2025-11-18T09:31:55+00:00",
+    "end_time_utc": "2025-12-18T08:53:12+00:00",
     "tracks": [
       {
-        "track_id": "epic_001",
-        "track_name": "epic1",
-        "track_url": "https://pub-5fdeab8f68f54d4a976fe22c1201fbb0.r2.dev/epic.mp3",
-        "track_duration_seconds": 158
+        "track_id": "526a3563-2d89-4cc6-abce-7985c0cad8cf",
+        "track_name": "epic",
+        "track_url": "https://pub-5fdeab8f68f54d4a976fe22c1201fbb0.r2.dev/tracks/526a3563-2d89-4cc6-abce-7985c0cad8cf-epic.mp3",
+        "track_duration_seconds": 159
       },
       {
-        "track_id": "horror_001",
-        "track_name": "horror1",
-        "track_url": "https://pub-5fdeab8f68f54d4a976fe22c1201fbb0.r2.dev/horror.mp3",
+        "track_id": "5e2cbed1-62bd-4556-a304-50039f0056ca",
+        "track_name": "horror",
+        "track_url": "https://pub-5fdeab8f68f54d4a976fe22c1201fbb0.r2.dev/tracks/5e2cbed1-62bd-4556-a304-50039f0056ca-horror.mp3",
         "track_duration_seconds": 148
       },
       {
-        "track_id": "christmas_001",
-        "track_name": "christmas1",
-        "track_url": "https://pub-5fdeab8f68f54d4a976fe22c1201fbb0.r2.dev/christmas.mp3",
-        "track_duration_seconds": 112
+        "track_id": "74123b2a-0a72-44c4-8249-2da513e0c9bf",
+        "track_name": "christmas",
+        "track_url": "https://pub-5fdeab8f68f54d4a976fe22c1201fbb0.r2.dev/tracks/74123b2a-0a72-44c4-8249-2da513e0c9bf-christmas.mp3",
+        "track_duration_seconds": 113
       }
-    ]
-  },
-  {
-    "event_id": "demo_event_002",
-    "event_name": "LiveRoom Test 2",
-    "artist_name": "Codex DJ2",
-    "start_time_utc": "2025-11-18T08:31:56+00:00",
-    "end_time_utc": "2025-11-18T08:34:56+00:00",
-    "tracks": [
-      {
-        "track_id": "horror_002",
-        "track_name": "horror2",
-        "track_url": "https://pub-5fdeab8f68f54d4a976fe22c1201fbb0.r2.dev/horror.mp3",
-        "track_duration_seconds": 148
-      },
-      {
-        "track_id": "christmas_002",
-        "track_name": "christmas2",
-        "track_url": "https://pub-5fdeab8f68f54d4a976fe22c1201fbb0.r2.dev/christmas.mp3",
-        "track_duration_seconds": 112
-      },
-      {
-        "track_id": "epic_002",
-        "track_name": "epic2",
-        "track_url": "https://pub-5fdeab8f68f54d4a976fe22c1201fbb0.r2.dev/epic.mp3",
-        "track_duration_seconds": 158
-      }
-    ]
+    ],
+    "cover_image_url": "https://pub-5fdeab8f68f54d4a976fe22c1201fbb0.r2.dev/images/4e8790a8-7ba3-48ed-8be3-536846ff822d-liveroomtechnologies-logo.jpeg"
   }
 ]
