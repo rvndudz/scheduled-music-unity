@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using UnityEngine;
@@ -16,12 +17,22 @@ public class ScheduledPlaybackController : MonoBehaviour
     [SerializeField] private AudioSource audioSource;
     [SerializeField] private UtcTimeSyncService timeSyncService;
 
+    [Header("Default Event Fallback")]
+    [SerializeField] private bool enableDefaultEventFallback = true;
+    [SerializeField] private TextAsset defaultEventJson;
+    [SerializeField] private float defaultEventCheckIntervalSeconds = 60f;
+    [SerializeField] private string defaultEventId;
+
     public event Action<ScheduledEventPayload> ActiveEventChanged;
     public event Action<ScheduledTrack> TrackChanged;
 
     public ScheduledEventPayload CurrentActiveEvent { get; private set; }
     public ScheduledTrack CurrentTrack { get; private set; }
+    public bool IsDefaultEventActive { get; private set; }
 
+    private readonly Dictionary<string, AudioClip> clipCache = new();
+
+    private ScheduledEventPayload defaultEventPayload;
     private Coroutine playbackRoutine;
 
     private void Awake()
@@ -108,46 +119,50 @@ public class ScheduledPlaybackController : MonoBehaviour
             yield break;
         }
 
+        TryLoadDefaultEvent(events);
+
         yield return timeSyncService.EnsureInitialized();
 
         while (true)
         {
             var currentTime = timeSyncService.GetCurrentUtc();
 
-            if (!TrySelectRelevantEvent(events, currentTime, out var schedule, out var eventStart, out var eventEnd, out var eventAlreadyStarted))
+            if (TryFindActiveEvent(events, currentTime, out var schedule, out var eventStart, out var eventEnd))
             {
-                Debug.Log("ScheduledPlaybackController: No active or upcoming events to play. Stopping playback.");
-                yield break;
+                SetActiveEvent(schedule, isDefault: false);
+
+                if (schedule.tracks == null || schedule.tracks.Length == 0)
+                {
+                    Debug.LogError($"Event \"{schedule.event_name}\" does not include any tracks.");
+                    yield break;
+                }
+
+                var elapsedSeconds = Mathf.Max(0f, (float)(currentTime - eventStart).TotalSeconds);
+                yield return PlayFromElapsed(schedule, elapsedSeconds, eventEnd);
+                continue;
             }
 
-            if (schedule.tracks == null || schedule.tracks.Length == 0)
+            if (enableDefaultEventFallback && defaultEventPayload != null)
             {
-                Debug.LogError($"Event \"{schedule.event_name}\" does not include any tracks.");
-                yield break;
+                yield return PlayDefaultUntilScheduledEventStarts(events);
+                continue;
             }
 
-            var eventChanged = CurrentActiveEvent != schedule;
-            CurrentActiveEvent = schedule;
-            ActiveEventChanged?.Invoke(schedule);
-            if (eventChanged)
+            if (TryFindNextUpcomingEvent(events, currentTime, out var nextEvent, out var nextStart, out _))
             {
-                NotifyTrackChanged(null);
-            }
-
-            if (!eventAlreadyStarted)
-            {
-                var waitSeconds = Mathf.Max(0f, (float)(eventStart - currentTime).TotalSeconds);
+                var waitSeconds = Mathf.Max(0f, (float)(nextStart - currentTime).TotalSeconds);
                 if (waitSeconds > 0f)
                 {
-                    Debug.Log($"Event \"{schedule.event_name}\" has not started yet. Waiting {waitSeconds:F0} seconds.");
+                    Debug.Log($"ScheduledPlaybackController: No active event. Waiting {waitSeconds:F0} seconds for next event \"{nextEvent.event_name}\".");
                     yield return new WaitForSecondsRealtime(waitSeconds);
                 }
 
                 continue;
             }
 
-            var elapsedSeconds = Mathf.Max(0f, (float)(currentTime - eventStart).TotalSeconds);
-            yield return PlayFromElapsed(schedule, elapsedSeconds, eventEnd);
+            Debug.Log("ScheduledPlaybackController: No active or upcoming events to play. Stopping playback.");
+            SetActiveEvent(null, isDefault: false);
+            yield break;
         }
     }
 
@@ -165,19 +180,7 @@ public class ScheduledPlaybackController : MonoBehaviour
             AudioClip clip = null;
             var resolvedTrackUrl = CloudflareR2UrlBuilder.GetSignedOrPublicUrl(track.track_url);
 
-            using (var clipRequest = UnityWebRequestMultimedia.GetAudioClip(resolvedTrackUrl, GuessAudioType(resolvedTrackUrl)))
-            {
-                Debug.Log($"ScheduledPlaybackController: Downloading track \"{track.track_name}\" from {resolvedTrackUrl}...");
-                yield return clipRequest.SendWebRequest();
-
-                if (clipRequest.result != UnityWebRequest.Result.Success)
-                {
-                    Debug.LogError($"Failed to download track {track.track_name} ({resolvedTrackUrl}): {clipRequest.error}");
-                    yield break;
-                }
-
-                clip = DownloadHandlerAudioClip.GetContent(clipRequest);
-            }
+            yield return GetOrDownloadClip(resolvedTrackUrl, GuessAudioType(resolvedTrackUrl), c => clip = c);
 
             if (clip == null)
             {
@@ -226,68 +229,6 @@ public class ScheduledPlaybackController : MonoBehaviour
 
         NotifyTrackChanged(null);
         Debug.Log("Finished scheduled playback for this event.");
-    }
-
-    private bool TrySelectRelevantEvent(ScheduledEventPayload[] events, DateTimeOffset currentTime, out ScheduledEventPayload selectedEvent, out DateTimeOffset eventStart, out DateTimeOffset eventEnd, out bool hasStarted)
-    {
-        selectedEvent = null;
-        eventStart = default;
-        eventEnd = default;
-        hasStarted = false;
-
-        ScheduledEventPayload upcomingEvent = null;
-        DateTimeOffset upcomingStart = DateTimeOffset.MaxValue;
-        DateTimeOffset upcomingEnd = default;
-
-        foreach (var evt in events)
-        {
-            if (!TryParseUtcTimestamp(evt.start_time_utc, out var start))
-            {
-                Debug.LogWarning($"ScheduledPlaybackController: Invalid start time for event {evt.event_id} ({evt.start_time_utc}).");
-                continue;
-            }
-
-            if (!TryParseUtcTimestamp(evt.end_time_utc, out var end))
-            {
-                Debug.LogWarning($"ScheduledPlaybackController: Invalid end time for event {evt.event_id} ({evt.end_time_utc}).");
-                continue;
-            }
-
-            if (end <= start)
-            {
-                Debug.LogWarning($"ScheduledPlaybackController: Event {evt.event_id} has end time before start time.");
-                continue;
-            }
-
-            var adjustedEnd = AdjustEventEndWithTracks(evt, start, end);
-
-            if (currentTime >= start && currentTime < adjustedEnd)
-            {
-                selectedEvent = evt;
-                eventStart = start;
-                eventEnd = adjustedEnd;
-                hasStarted = true;
-                return true;
-            }
-
-            if (currentTime < start && start < upcomingStart)
-            {
-                upcomingEvent = evt;
-                upcomingStart = start;
-                upcomingEnd = adjustedEnd;
-            }
-        }
-
-        if (upcomingEvent != null)
-        {
-            selectedEvent = upcomingEvent;
-            eventStart = upcomingStart;
-            eventEnd = upcomingEnd;
-            hasStarted = false;
-            return true;
-        }
-
-        return false;
     }
 
     private bool TryFindTrackAtTime(ScheduledEventPayload schedule, float elapsedSeconds, out int trackIndex, out float offsetInTrack)
@@ -390,5 +331,281 @@ public class ScheduledPlaybackController : MonoBehaviour
 
         CurrentTrack = track;
         TrackChanged?.Invoke(track);
+    }
+
+    private bool TryFindActiveEvent(ScheduledEventPayload[] events, DateTimeOffset currentTime, out ScheduledEventPayload activeEvent, out DateTimeOffset start, out DateTimeOffset adjustedEnd)
+    {
+        activeEvent = null;
+        start = default;
+        adjustedEnd = default;
+
+        foreach (var evt in events)
+        {
+            if (!TryParseUtcTimestamp(evt.start_time_utc, out var parsedStart))
+            {
+                Debug.LogWarning($"ScheduledPlaybackController: Invalid start time for event {evt.event_id} ({evt.start_time_utc}).");
+                continue;
+            }
+
+            if (!TryParseUtcTimestamp(evt.end_time_utc, out var parsedEnd))
+            {
+                Debug.LogWarning($"ScheduledPlaybackController: Invalid end time for event {evt.event_id} ({evt.end_time_utc}).");
+                continue;
+            }
+
+            if (parsedEnd <= parsedStart)
+            {
+                Debug.LogWarning($"ScheduledPlaybackController: Event {evt.event_id} has end time before start time.");
+                continue;
+            }
+
+            var endWithTracks = AdjustEventEndWithTracks(evt, parsedStart, parsedEnd);
+            if (currentTime >= parsedStart && currentTime < endWithTracks)
+            {
+                activeEvent = evt;
+                start = parsedStart;
+                adjustedEnd = endWithTracks;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool TryFindNextUpcomingEvent(ScheduledEventPayload[] events, DateTimeOffset currentTime, out ScheduledEventPayload nextEvent, out DateTimeOffset start, out DateTimeOffset adjustedEnd)
+    {
+        nextEvent = null;
+        start = default;
+        adjustedEnd = default;
+        var earliestStart = DateTimeOffset.MaxValue;
+
+        foreach (var evt in events)
+        {
+            if (!TryParseUtcTimestamp(evt.start_time_utc, out var parsedStart) ||
+                !TryParseUtcTimestamp(evt.end_time_utc, out var parsedEnd))
+            {
+                continue;
+            }
+
+            if (parsedEnd <= parsedStart || parsedStart <= currentTime)
+            {
+                continue;
+            }
+
+            if (parsedStart < earliestStart)
+            {
+                earliestStart = parsedStart;
+                start = parsedStart;
+                adjustedEnd = AdjustEventEndWithTracks(evt, parsedStart, parsedEnd);
+                nextEvent = evt;
+            }
+        }
+
+        return nextEvent != null;
+    }
+
+    private IEnumerator PlayDefaultUntilScheduledEventStarts(ScheduledEventPayload[] scheduledEvents)
+    {
+        if (defaultEventPayload == null)
+        {
+            yield break;
+        }
+
+        if (defaultEventPayload.tracks == null || defaultEventPayload.tracks.Length == 0)
+        {
+            Debug.LogWarning("ScheduledPlaybackController: Default event is missing tracks, cannot play fallback audio.");
+            yield break;
+        }
+
+        SetActiveEvent(defaultEventPayload, isDefault: true);
+
+        while (true)
+        {
+            if (HasScheduledEventStarted(scheduledEvents))
+            {
+                StopDefaultPlayback();
+                yield break;
+            }
+
+            for (int i = 0; i < defaultEventPayload.tracks.Length; i++)
+            {
+                var track = defaultEventPayload.tracks[i];
+                var resolvedTrackUrl = CloudflareR2UrlBuilder.GetSignedOrPublicUrl(track.track_url);
+
+                AudioClip clip = null;
+                yield return GetOrDownloadClip(resolvedTrackUrl, GuessAudioType(resolvedTrackUrl), c => clip = c);
+
+                if (clip == null)
+                {
+                    Debug.LogError($"ScheduledPlaybackController: Unable to download default track \"{track.track_name}\"");
+                    StopDefaultPlayback();
+                    yield break;
+                }
+
+                audioSource.clip = clip;
+                audioSource.time = 0f;
+                audioSource.loop = false;
+                audioSource.Play();
+
+                NotifyTrackChanged(track);
+
+                var remaining = clip.length;
+                var checkInterval = Mathf.Max(1f, defaultEventCheckIntervalSeconds);
+                while (remaining > 0f)
+                {
+                    var wait = Mathf.Min(checkInterval, remaining);
+
+                    if (TryFindNextUpcomingEvent(scheduledEvents, timeSyncService.GetCurrentUtc(), out _, out var upcomingStart, out _))
+                    {
+                        var untilNextEvent = Mathf.Max(0f, (float)(upcomingStart - timeSyncService.GetCurrentUtc()).TotalSeconds);
+                        if (untilNextEvent > 0f)
+                        {
+                            wait = Mathf.Min(wait, untilNextEvent);
+                        }
+                    }
+
+                    yield return new WaitForSecondsRealtime(wait);
+                    remaining -= wait;
+
+                    if (HasScheduledEventStarted(scheduledEvents))
+                    {
+                        StopDefaultPlayback();
+                        yield break;
+                    }
+                }
+            }
+        }
+    }
+
+    private void StopDefaultPlayback()
+    {
+        audioSource.Stop();
+        SetActiveEvent(null, isDefault: false);
+    }
+
+    private ScheduledEventPayload FindDefaultEventFromSchedule(ScheduledEventPayload[] events)
+    {
+        if (events == null || events.Length == 0)
+        {
+            return null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(defaultEventId))
+        {
+            foreach (var evt in events)
+            {
+                if (string.Equals(evt.event_id, defaultEventId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return evt;
+                }
+            }
+        }
+
+        foreach (var evt in events)
+        {
+            if (!string.IsNullOrWhiteSpace(evt.event_name) &&
+                string.Equals(evt.event_name.Trim(), "default", StringComparison.OrdinalIgnoreCase))
+            {
+                return evt;
+            }
+        }
+
+        return null;
+    }
+
+    private bool HasScheduledEventStarted(ScheduledEventPayload[] scheduledEvents)
+    {
+        var now = timeSyncService.GetCurrentUtc();
+        return TryFindActiveEvent(scheduledEvents, now, out _, out _, out _);
+    }
+
+    private void SetActiveEvent(ScheduledEventPayload payload, bool isDefault)
+    {
+        var changed = CurrentActiveEvent != payload || IsDefaultEventActive != isDefault;
+        CurrentActiveEvent = payload;
+        IsDefaultEventActive = isDefault;
+
+        if (changed)
+        {
+            ActiveEventChanged?.Invoke(payload);
+            NotifyTrackChanged(null);
+        }
+    }
+
+    private void TryLoadDefaultEvent(ScheduledEventPayload[] loadedEvents)
+    {
+        if (!enableDefaultEventFallback)
+        {
+            defaultEventPayload = null;
+            return;
+        }
+
+        if (defaultEventPayload != null)
+        {
+            return;
+        }
+
+        if (defaultEventJson != null)
+        {
+            string parseError = null;
+            if (scheduleLoader != null && scheduleLoader.TryParseEvents(defaultEventJson.text, out var parsedEvents, out parseError))
+            {
+                defaultEventPayload = parsedEvents != null && parsedEvents.Length > 0 ? parsedEvents[0] : null;
+            }
+            else
+            {
+                Debug.LogWarning($"ScheduledPlaybackController: Unable to parse default event JSON. {parseError ?? "No parser available."}");
+            }
+        }
+
+        if (defaultEventPayload == null)
+        {
+            defaultEventPayload = FindDefaultEventFromSchedule(loadedEvents);
+            if (defaultEventPayload != null)
+            {
+                Debug.Log("ScheduledPlaybackController: Using default event from loaded schedule.");
+            }
+        }
+
+        if (defaultEventPayload == null)
+        {
+            Debug.LogWarning("ScheduledPlaybackController: Default event fallback is enabled but no default event data was found.");
+        }
+    }
+
+    private IEnumerator GetOrDownloadClip(string url, AudioType audioType, Action<AudioClip> onReady)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            onReady?.Invoke(null);
+            yield break;
+        }
+
+        if (clipCache.TryGetValue(url, out var cachedClip) && cachedClip != null)
+        {
+            onReady?.Invoke(cachedClip);
+            yield break;
+        }
+
+        using (var clipRequest = UnityWebRequestMultimedia.GetAudioClip(url, audioType))
+        {
+            Debug.Log($"ScheduledPlaybackController: Downloading track from {url}...");
+            yield return clipRequest.SendWebRequest();
+
+            if (clipRequest.result != UnityWebRequest.Result.Success)
+            {
+                Debug.LogError($"ScheduledPlaybackController: Failed to download track ({url}): {clipRequest.error}");
+                onReady?.Invoke(null);
+                yield break;
+            }
+
+            var clip = DownloadHandlerAudioClip.GetContent(clipRequest);
+            if (clip != null)
+            {
+                clipCache[url] = clip;
+            }
+
+            onReady?.Invoke(clip);
+        }
     }
 }
