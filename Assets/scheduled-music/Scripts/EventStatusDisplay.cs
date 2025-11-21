@@ -4,17 +4,21 @@ using System.Text;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Networking;
-using UnityEngine.UI;
 
 [DisallowMultipleComponent]
 public class EventStatusDisplay : MonoBehaviour
 {
     [SerializeField] private ScheduledPlaybackController playbackController;
     [SerializeField] private UtcTimeSyncService timeSyncService;
-    [SerializeField] private TMP_Text statusLabel;
+    [Header("Text Outputs")]
+    [SerializeField] private TMP_Text eventNameLabel;
+    [SerializeField] private TMP_Text artistNameLabel;
+    [SerializeField] private TMP_Text currentTrackLabel;
+    [SerializeField] private TMP_Text timeWindowLabel;
+    [SerializeField] private TMP_Text tracksListLabel;
     [SerializeField] private float refreshIntervalSeconds = 1f;
     [Header("Cover Image")]
-    [SerializeField] private RawImage coverImage;
+    [SerializeField] private Renderer coverRenderer;
     [SerializeField] private Texture2D fallbackCoverTexture;
 
     private ScheduledEventPayload currentEvent;
@@ -99,56 +103,55 @@ public class EventStatusDisplay : MonoBehaviour
 
     private void UpdateStatus()
     {
-        if (statusLabel == null)
-        {
-            return;
-        }
-
-        var builder = new StringBuilder();
         var utcNow = timeSyncService != null ? timeSyncService.GetCurrentUtc() : System.DateTimeOffset.UtcNow;
-        builder.AppendLine($"Current UTC: {utcNow:yyyy-MM-dd HH:mm:ss 'UTC'}");
 
         if (currentEvent == null)
         {
             Debug.Log("EventStatusDisplay: No current event when updating status.");
-            builder.AppendLine("No active event.");
-            statusLabel.text = builder.ToString();
+            ApplyText(eventNameLabel, "No active event");
+            ApplyText(artistNameLabel, string.Empty);
+            ApplyText(currentTrackLabel, string.Empty);
+            ApplyText(timeWindowLabel, $"Current UTC: {utcNow:yyyy-MM-dd HH:mm:ss 'UTC'}");
+            ApplyText(tracksListLabel, string.Empty);
             return;
         }
 
-        builder.AppendLine($"Event: {currentEvent.event_name} ({currentEvent.event_id})");
-        builder.AppendLine($"Artist: {currentEvent.artist_name}");
-        builder.AppendLine($"Window: {currentEvent.start_time_utc} -> {currentEvent.end_time_utc}");
+        ApplyText(eventNameLabel, currentEvent.event_name);
+        ApplyText(artistNameLabel, currentEvent.artist_name);
 
-        if (currentTrack != null)
-        {
-            builder.AppendLine($"Now Playing: {currentTrack.track_name} ({currentTrack.track_duration_seconds:F0}s)");
-        }
-        else
-        {
-            builder.AppendLine("Now Playing: --");
-        }
+        var trackLabel = currentTrack != null
+            ? $"{currentTrack.track_name} ({currentTrack.track_duration_seconds:F0}s)"
+            : "Now Playing: --";
+        ApplyText(currentTrackLabel, trackLabel);
 
-        if (currentEvent.tracks != null && currentEvent.tracks.Length > 0)
+        ApplyText(timeWindowLabel, $"{currentEvent.start_time_utc} -> {currentEvent.end_time_utc} (UTC now {utcNow:yyyy-MM-dd HH:mm:ss})");
+
+        if (tracksListLabel != null)
         {
-            builder.AppendLine();
-            builder.AppendLine("Tracks:");
-            for (int i = 0; i < currentEvent.tracks.Length; i++)
+            if (currentEvent.tracks != null && currentEvent.tracks.Length > 0)
             {
-                var track = currentEvent.tracks[i];
-                builder.AppendLine($"{i + 1}. {track.track_name} ({track.track_duration_seconds:F0}s)");
+                var builder = new StringBuilder();
+                for (int i = 0; i < currentEvent.tracks.Length; i++)
+                {
+                    var track = currentEvent.tracks[i];
+                    builder.AppendLine($"{i + 1}. {track.track_name} ({track.track_duration_seconds:F0}s)");
+                }
+                tracksListLabel.text = builder.ToString();
+            }
+            else
+            {
+                tracksListLabel.text = string.Empty;
             }
         }
 
-        statusLabel.text = builder.ToString();
-        Debug.Log("EventStatusDisplay: Status label updated.");
+        Debug.Log("EventStatusDisplay: Status labels updated.");
     }
 
     private void UpdateCoverImage()
     {
-        if (coverImage == null)
+        if (coverRenderer == null)
         {
-            Debug.LogWarning("EventStatusDisplay: CoverImage is not assigned.");
+            Debug.LogWarning("EventStatusDisplay: Cover renderer is not assigned.");
             return;
         }
 
@@ -165,15 +168,16 @@ public class EventStatusDisplay : MonoBehaviour
             return;
         }
 
-        if (coverCache.TryGetValue(currentEvent.cover_image_url, out var cachedTexture))
+        var resolvedUrl = CloudflareR2UrlBuilder.GetSignedOrPublicUrl(currentEvent.cover_image_url);
+        if (coverCache.TryGetValue(resolvedUrl, out var cachedTexture))
         {
             Debug.Log("EventStatusDisplay: Using cached cover.");
             ApplyCoverTexture(cachedTexture);
             return;
         }
 
-        Debug.Log($"EventStatusDisplay: Downloading cover from {currentEvent.cover_image_url}");
-        coverRoutine = StartCoroutine(DownloadCoverImage(currentEvent.cover_image_url));
+        Debug.Log($"EventStatusDisplay: Downloading cover from {resolvedUrl}");
+        coverRoutine = StartCoroutine(DownloadCoverImage(resolvedUrl));
     }
 
     private IEnumerator DownloadCoverImage(string url)
@@ -205,13 +209,24 @@ public class EventStatusDisplay : MonoBehaviour
 
     private void ApplyCoverTexture(Texture texture)
     {
-        if (coverImage == null)
+        if (coverRenderer == null)
         {
             return;
         }
 
-        coverImage.texture = texture;
-        coverImage.color = texture == null ? Color.clear : Color.white;
+        var appliedTexture = texture != null ? texture : fallbackCoverTexture;
+        // material.mainTexture works across Standard/URP shaders; creates an instance per renderer.
+        var materialInstance = coverRenderer.material;
+        materialInstance.mainTexture = appliedTexture;
+        coverRenderer.enabled = appliedTexture != null;
         Debug.Log($"EventStatusDisplay: ApplyCoverTexture called. Texture null: {texture == null}");
+    }
+
+    private static void ApplyText(TMP_Text label, string value)
+    {
+        if (label != null)
+        {
+            label.text = value;
+        }
     }
 }

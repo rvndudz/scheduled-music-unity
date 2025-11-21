@@ -192,7 +192,7 @@ public class EventManagementPanel : MonoBehaviour
         }
 
         var track = evt.tracks[trackIndex];
-        StartCoroutine(DownloadAndPlayPreview(track.track_url));
+        StartCoroutine(DownloadAndPlayPreview(CloudflareR2UrlBuilder.GetSignedOrPublicUrl(track.track_url)));
     }
 
     public void SaveEventsToJsonFile(string relativePath)

@@ -163,15 +163,16 @@ public class ScheduledPlaybackController : MonoBehaviour
         {
             var track = schedule.tracks[i];
             AudioClip clip = null;
+            var resolvedTrackUrl = CloudflareR2UrlBuilder.GetSignedOrPublicUrl(track.track_url);
 
-            using (var clipRequest = UnityWebRequestMultimedia.GetAudioClip(track.track_url, GuessAudioType(track.track_url)))
+            using (var clipRequest = UnityWebRequestMultimedia.GetAudioClip(resolvedTrackUrl, GuessAudioType(resolvedTrackUrl)))
             {
-                Debug.Log($"ScheduledPlaybackController: Downloading track \"{track.track_name}\" from {track.track_url}...");
+                Debug.Log($"ScheduledPlaybackController: Downloading track \"{track.track_name}\" from {resolvedTrackUrl}...");
                 yield return clipRequest.SendWebRequest();
 
                 if (clipRequest.result != UnityWebRequest.Result.Success)
                 {
-                    Debug.LogError($"Failed to download track {track.track_name} ({track.track_url}): {clipRequest.error}");
+                    Debug.LogError($"Failed to download track {track.track_name} ({resolvedTrackUrl}): {clipRequest.error}");
                     yield break;
                 }
 
